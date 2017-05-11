@@ -1,131 +1,276 @@
-var game = new Phaser.Game(1024,768,Phaser.AUTO,'game',{ preload: preload, create: create, update: update, render: render });
+function Hero(game, x, y) {
+	Phaser.Sprite.call(this, game, x, y, 'hero');
+	this.anchor.set(0.5);
+	this.game.physics.enable(this);
+	this.body.collideWorldBounds = true;
+	this.game.camera.follow(this);
 
-function preload () {
-	game.load.image('background', 'assets/images/back1.png');
-	game.load.image('ground1', 'assets/tilemaps/tiles/grassMid.png');
-	game.load.image('platform', 'assets/tilemaps/tiles/platform.png');
-	game.load.image('orb', 'assets/images/orb.png');
-	game.load.tilemap('map', 'assets/tilemaps/maps/first.json', null, Phaser.Tilemap.TILED_JSON);
-	game.load.spritesheet('player', 'assets/images/player1.png', 80, 110, 24);
+	this.animations.add('idle', [0]);
+	this.animations.add('walk', [9, 10], 8, true);
+	this.animations.add('jump', [1]);
+    this.animations.add('fall', [2]);
+	this.animations.add('duck', [3]);
+	this.animations.add('sneak', [19,3], 8, true);
+	this.animations.add('weapon', [11]);
+}
+
+Hero.prototype = Object.create(Phaser.Sprite.prototype);
+Hero.prototype.constructor = Hero;
+
+Hero.prototype.move = function(direction) {
+	const SPEED = 600;
+	this.body.velocity.x = direction * SPEED;
+	
+	if (direction < 0)
+		this.scale.x = -1;
+	else
+		this.scale.x = 1;
+	
+	if (this.body.onFloor()) {
+		if (this.body.velocity.x === 0)
+			this.animations.play('idle');
+		else 
+			this.animations.play('walk');
+	}
+	else {
+		if (this.body.velocity.y <= 0 )
+			this.animations.play('jump');
+		else
+			this.animations.play('fall');
+	}
 };
 
-var map;
-var layer;
-var background;
-var cursors;
-var player;
-//var facing = 'right';
-var orb;
+Hero.prototype.animate = function() {
+	if (this.body.onFloor()) {
+		if (this.body.velocity.x === 0)
+			this.animations.play('idle');
+		else
+			this.animations.play('walk');
+	}
+	else if (this.body.velocity.y < 0) {
+		this.animations.play('jump');
+	}
+	else {
+		this.animations.play('fall');
+	}
+};
 
+Hero.prototype.jump = function() {
+	const JUMP_SPEED = 800;
+	
+	//let canJump = this.body.touching.down;
+	let canJump = this.body.onFloor();
+	if (canJump) {
+		this.body.velocity.y = - JUMP_SPEED;
+		this.animations.play('jump');
+	}
+
+	return canJump;
+};
+
+Hero.prototype.hover = function() {
+	const HOVER_SPEED = 100, LIMIT = 400;
+
+	if (this.body.velocity.y > -LIMIT)
+		this.body.velocity.y += -HOVER_SPEED; 
+};
+
+PlayState = {};
+
+PlayState.init = function() {
+	this.game.renderer.renderSession.roundPixels = true;
+
+	this.keys = this.game.input.keyboard.addKeys({
+		left: Phaser.KeyCode.A,
+		right: Phaser.KeyCode.D,
+		up: Phaser.KeyCode.W,
+		jump: Phaser.KeyCode.SPACEBAR
+	});
+
+	this.keys.jump.onDown.add(function() {
+		this.hero.jump();
+	}, this);
+};
+
+PlayState.preload = function() {
+	this.game.load.image('background', 'assets/images/back2.png');
+	this.game.load.image('abstractTiles', 'assets/tilesheets/abstractTilesheet.png');
+	this.game.load.tilemap('level:1', 'assets/tilemaps/level01.json', 
+		null, Phaser.Tilemap.TILED_JSON);
+	this.game.load.spritesheet('hero', 'assets/images/player1.png', 80, 110, 24);
+};
+
+PlayState.create = function() {
+	background = this.game.add.image(0, 0, 'background');
+	background.fixedToCamera = true;
+
+	this._loadLevel();
+};
+
+PlayState.update = function() {
+	this._handleCollisions();
+	this._handleInput();
+};
+
+PlayState._loadLevel = function(data) {
+	const GRAVITY = 2000;
+	this.game.physics.arcade.gravity.y = GRAVITY;
+
+	this.map = this.game.add.tilemap('level:1');	
+	this.map.addTilesetImage('abstractTilesheet', 'abstractTiles');
+	
+	this.backgroundLayer = this.map.createLayer('background');
+	this.groundLayer = this.map.createLayer('ground');
+	this.waterLayer = this.map.createLayer('water');
+	this.decorationLayer = this.map.createLayer('decoration');
+	this.map.setCollisionBetween(1, 100, true, 'ground');
+	this.groundLayer.resizeWorld();
+
+	this._spawnCharacters();
+};
+
+PlayState._spawnCharacters = function(data) {
+	this.hero = new Hero(this.game, 500, 900);
+	this.game.add.existing(this.hero);
+};
+
+PlayState._spawnPlatform = function(platform) {
+	let sprite = this.platforms.create(platform.x, platform.y, platform.image);	
+	this.game.physics.enable(sprite);
+	sprite.body.allowGravity = false;
+	sprite.body.immovable = true;
+};
+
+PlayState._handleCollisions = function() {
+	this.game.physics.arcade.collide(this.hero, this.groundLayer);
+};
+
+PlayState._handleInput = function() {
+	// Move
+	if (this.keys.left.isDown)
+		this.hero.move(-1);
+	else if (this.keys.right.isDown) 
+		this.hero.move(1);
+	else
+		this.hero.move(0);
+	// Hover
+	if (this.keys.up.isDown) 
+		this.hero.hover();
+};
+
+window.onload = function() {
+	var game = new Phaser.Game(960, 600, Phaser.AUTO, 'game');
+	game.state.add('play', PlayState);
+	game.state.start('play');
+};
+
+/*
 function create () {
 	game.physics.startSystem(Phaser.Physics.ARCADE);
-	
-	background = game.add.image(0, 0, 'background');
-	background.fixedToCamera = true;
-	
 	game.physics.arcade.gravity.y = 250;
-	
-	map = game.add.tilemap('map');
-	map.addTilesetImage('ground1');
-	map.addTilesetImage('platform');
-	map.setCollisionBetween(1,30);
-	
-	layer = map.createLayer('Tile Layer 1'); 
 
-	layer.resizeWorld();
-	
+	// Player
 	player = game.add.sprite(100, 600, 'player');
-	orb = game.add.sprite(50, 50, 'orb');
-	orb.scale.setTo(0.2, 0.2);
-	
 	game.physics.enable(player, Phaser.Physics.ARCADE);
-	game.physics.enable(orb, Phaser.Physics.ARCADE);
 	
-	player.anchor.set(0.5,1);
+	player.anchor.set(0.5, 1);
 	player.body.collideWorldBounds = true;
 	player.body.gravity.y = 1500;
 	
+	player.facing = 'right';
+	player.jumpPower = 1200;
+	player.moveSpeed = 300;
+	player.hoverPower = 100;
+	player.hoverSpeed = 400;
+
 	player.animations.add('walk', [9, 10], 8, true);
 	player.animations.add('idle', [0]);
 	player.animations.add('jump', [1]);
     player.animations.add('fall', [2]);
 	player.animations.add('duck', [3]);
 	player.animations.add('sneak', [19,3], 8, true);
+	player.animations.add('weapon', [11]);
 	
-	player.facing = 'right';
-	player.body.jumpPower = 1200;
-	player.body.moveSpeed = 200;
-
-	orb.body.collideWorldBounds = true;
-
 	game.camera.follow(player);
-	cursors = game.input.keyboard.createCursorKeys();
-	
-	player.update = function() {
-		game.physics.arcade.collide(this, layer);
 
-		if (cursors.left.isDown) {
-			this.body.velocity.x = -this.body.moveSpeed;
+	// Input keys
+	cursors = game.input.keyboard.createCursorKeys();
+	moveKeys = {
+		up: game.input.keyboard.addKey(Phaser.Keyboard.W),
+		down: game.input.keyboard.addKey(Phaser.Keyboard.S),
+		left: game.input.keyboard.addKey(Phaser.Keyboard.A),
+		right: game.input.keyboard.addKey(Phaser.Keyboard.D)
+	};
+	key1 = game.input.keyboard.addKey(Phaser.Keyboard.ONE);
+	key2 = game.input.keyboard.addKey(Phaser.Keyboard.TWO);
+	hoverKey = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+
+	player.move = function() {
+		if (cursors.left.isDown || moveKeys.left.isDown) {
+			this.body.velocity.x = -this.moveSpeed;
 			this.scale.x = -1;
 			this.animations.play('walk');
 			this.facing = 'left';		
 		}
-		else if (cursors.right.isDown) {
-			this.body.velocity.x = this.body.moveSpeed;
+		else if (cursors.right.isDown || moveKeys.right.isDown) {
+			this.body.velocity.x = this.moveSpeed;
 			this.scale.x = 1;
 			this.animations.play('walk');
 			this.facing = 'right';
 		}	
 		else {
 			this.body.velocity.x = 0;
-			this.animations.play('idle');
+			if (key1.isDown)
+				this.animations.play('weapon');
+			else
+				this.animations.play('idle');
 			this.animations.stop();
 			
 			if (this.facing == 'left')
 				this.scale.x = -1;
 		}
 		
-		if (cursors.up.isDown) {
+		// Jump	
+		if (cursors.up.isDown || moveKeys.up.isDown) {
 			if (this.body.onFloor())
-				this.body.velocity.y = -this.body.jumpPower;
-			this.animations.play('jump');
+				this.body.velocity.y = -this.jumpPower;
 		}
-		if (this.body.velocity.y < 0) {
+		if (this.body.velocity.y < 0) 
 			this.animations.play('jump');		
-		}
-		else if (this.body.velocity.y > 0 && !this.body.onFloor()) {
+		else if (this.body.velocity.y > 0 && !this.body.onFloor()) 
 			this.animations.play ('fall');
+
+		// Hover
+		if (hoverKey.isDown) {
+			this.body.velocity.y += -this.hoverPower;
+			if (this.body.velocity.y < -this.hoverSpeed)
+				this.body.velocity.y = -this.hoverSpeed;
 		}
 		
-		if (cursors.down.isDown) {
+		// sneak, duck	
+		if (cursors.down.isDown || moveKeys.down.isDown) {
 			if (this.body.velocity.x != 0)
 				this.animations.play('sneak');	
 			else	
 				this.animations.play ('duck');
 		}
+	};
+
+	player.update = function() {
+		game.physics.arcade.collide(this, layer);
+		player.move();
 	};	
 
-	orb.update = function() {
-		game.physics.arcade.collide(this, layer);
-
-		if (game.input.mousePointer.isDown) {
-			game.physics.arcade.moveToPointer(this, 500);
-		}
-		if (this.body.onFloor())
-			this.body.velocity.x *= 0.9;
-	};
-		
 };
 
 function update () {
 	player.update();
-	orb.update();
 };
 
 function render () {
 
 };
-
+*/
 
 
 
